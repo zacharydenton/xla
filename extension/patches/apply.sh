@@ -21,3 +21,8 @@ arch="$(uname -m)"
 # See https://github.com/tensorflow/tensorflow/pull/86413 and the
 # referenced threads.
 git apply $dir/cuda_ncrtc_builtins.patch
+
+# Fix ROCm include paths for TheRock/newer ROCm builds
+# The HIP compiler uses absolute paths that need to be in cxx_builtin_include_directories
+# to avoid "absolute path inclusion(s) found" errors during Bazel builds
+git apply $dir/rocm_therock_include_paths.patch

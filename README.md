@@ -51,12 +51,31 @@ in the cloud. In case you use ROCm and it does not work, please open up an issue
 we will be happy to help.
 
 In addition to building in a local environment, you can build the ROCm binary using
-the Docker-based scripts in [`builds/`](https://github.com/elixir-nx/xla/tree/main/builds). You may want to adjust the ROCm
-version in `rocm.Dockerfile` accordingly.
+the Docker-based scripts in [`builds/`](https://github.com/elixir-nx/xla/tree/main/builds):
 
-When you encounter errors at runtime, you may want to set `ROCM_PATH=/opt/rocm-6.0.0`
-and `LD_LIBRARY_PATH="/opt/rocm-6.0.0/lib"` (with your respective version). For further
-issues, feel free to open an issue.
+```shell
+# Standard ROCm build (6.3+)
+./builds/build.sh rocm
+
+# For newer GPUs like Strix Halo (gfx1151), use TheRock nightly builds
+./builds/build.sh rocm-therock
+```
+
+**Supported AMD GPU architectures:**
+- MI200 series (gfx90a)
+- MI300 series (gfx942)
+- RDNA2 (gfx1030)
+- RDNA3 (gfx1100)
+- Strix Halo (gfx1151) - requires TheRock nightly or ROCm 7.x+
+- RDNA4 (gfx1200, gfx1201)
+
+**Strix Halo (gfx1151) Requirements:**
+- Linux kernel 6.18.4 or newer
+- Avoid linux-firmware-20251125 (breaks ROCm support)
+- Recommended: Kernel 6.18.6+ with firmware 20260110+
+
+When you encounter errors at runtime, you may want to set `ROCM_PATH=/opt/rocm`
+and `LD_LIBRARY_PATH="/opt/rocm/lib"`. For further issues, feel free to open an issue.
 
 #### `XLA_BUILD`
 

@@ -326,12 +326,17 @@ defmodule XLA do
         "rocm" <> _ ->
           [
             "--config=rocm",
-            "--action_env=HIP_PLATFORM=hcc",
+            "--action_env=HIP_PLATFORM=amd",
             # See https://github.com/jax-ml/jax/blob/098e953afb2b83daf85e6456c89e896f9cfd483d/.bazelrc#L239
-            # GPU targets: MI200 (gfx90a), MI300 (gfx942), RDNA2 (gfx1030), RDNA3 (gfx1100), RDNA4 (gfx120x)
+            # GPU targets: MI200 (gfx90a), MI300 (gfx942), RDNA2 (gfx1030), RDNA3 (gfx1100),
+            # Strix Halo (gfx1151), RDNA4 (gfx120x)
             # Note: gfx900/906/908 (Vega, MI50/60, MI100) removed - deprecated in ROCm 7.x
             # Note: gfx940/941 removed - not valid LLVM targets, MI300 uses gfx942
-            ~s/--action_env=TF_ROCM_AMDGPU_TARGETS="gfx90a,gfx942,gfx1030,gfx1100,gfx1200,gfx1201"/
+            ~s/--action_env=TF_ROCM_AMDGPU_TARGETS="gfx90a,gfx942,gfx1030,gfx1100,gfx1151,gfx1200,gfx1201"/,
+            # Critical performance fix for gfx1151 (Strix Halo) - fixes compiler regression
+            # affecting loop unrolling. See https://github.com/kyuz0/amd-strix-halo-toolboxes
+            ~s/--copt=-mllvm/,
+            ~s/--copt=--amdgpu-unroll-threshold-local=600/
           ]
 
         "tpu" <> _ ->
@@ -342,12 +347,20 @@ defmodule XLA do
       end
 
     # For ROCm, disable system headers check due to ROCm toolchain using absolute paths
+    # TheRock nightly builds use clang 22 with absolute paths that need special handling
     bazel_build_flags_shared = case xla_target() do
       "rocm" <> _ ->
         [
           "--repo_env=CC=clang",
           "--repo_env=CXX=clang++",
-          "--features=-supports_system_headers"
+          "--features=-supports_system_headers",
+          # Disable absolute path validation for includes - required for TheRock's LLVM clang 22
+          # which puts headers at /opt/rocm/lib/llvm/lib/clang/22/include/
+          "--features=-sandboxed_include_paths",
+          # Allow absolute path includes from ROCm/HIP toolchain
+          "--sandbox_add_mount_pair=/opt/rocm",
+          "--cxxopt=-Wno-error",
+          "--host_cxxopt=-Wno-error"
         ]
 
       _ ->

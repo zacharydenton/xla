@@ -1,0 +1,15 @@
+diff --git a/third_party/gpus/rocm_configure.bzl b/third_party/gpus/rocm_configure.bzl
+--- a/third_party/gpus/rocm_configure.bzl
++++ b/third_party/gpus/rocm_configure.bzl
+@@ -161,6 +161,11 @@ def _rocm_include_path(repository_ctx, rocm_config, bash_bin):
+
+     inc_dirs.append(resource_dir + "/include")
+     inc_dirs.append(resource_dir + "/share")
++
++    # Also add absolute paths for TheRock/newer ROCm builds where the HIP
++    # compiler uses absolute paths that differ from the sandboxed paths
++    inc_dirs.append(resource_dir_abs + "/include")
++    inc_dirs.append(resource_dir_abs + "/share")
+
+     return inc_dirs
+

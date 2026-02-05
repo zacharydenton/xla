@@ -17,10 +17,11 @@ fi
 print_usage_and_exit() {
   echo "Usage: $0 <target>"
   echo ""
-  echo "Compiles the project inside docker. Available targets: cpu, cuda12, tpu, rocm."
+  echo "Compiles the project inside docker. Available targets: cpu, cuda12, tpu, rocm, rocm-therock."
   echo ""
   echo "Environment variables:"
-  echo "  ROCM_VERSION  - ROCm version for rocm target (default: 6.3)"
+  echo "  ROCM_VERSION   - ROCm version for rocm target (default: 6.3)"
+  echo "  THEROCK_TARGET - GPU target for rocm-therock (default: gfx1151, for Strix Halo)"
   exit 1
 }
 
@@ -71,6 +72,21 @@ case "$target" in
       --build-arg VARIANT=rocm \
       --build-arg BASE_IMAGE=$base_image \
       --build-arg ROCM_VERSION=$rocm_ver \
+      --build-arg XLA_TARGET=rocm \
+      .
+  ;;
+
+  "rocm-therock")
+    # TheRock nightly builds for newer GPUs like Strix Halo (gfx1151)
+    # See https://github.com/ROCm/TheRock and https://github.com/kyuz0/amd-strix-halo-toolboxes
+    therock_target="${THEROCK_TARGET:-gfx1151}"
+    target="rocm-therock-${therock_target}"
+    # TheRock requires Ubuntu 22.04 (Jammy)
+    base_image="docker.io/hexpm/elixir:1.15.8-erlang-26.2.5.6-ubuntu-jammy-20240808"
+    $CONTAINER_RT build -t xla-${target} -f builds/Dockerfile \
+      --build-arg VARIANT=rocm-therock \
+      --build-arg BASE_IMAGE=$base_image \
+      --build-arg THEROCK_TARGET=$therock_target \
       --build-arg XLA_TARGET=rocm \
       .
   ;;

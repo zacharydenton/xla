@@ -36,7 +36,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Use Clang for ROCm toolchain instead of GCC
 ENV TF_ROCM_CLANG="1"
 
-# Install ROCm
+# Install ROCm from official AMD repository
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg && \
   distro="$(. /etc/lsb-release && echo "$DISTRIB_CODENAME")" && \
   curl -sL https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add - && \
@@ -47,6 +47,73 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
   apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
 ENV ROCM_PATH "/opt/rocm"
+
+# TheRock nightly builds for newer GPU support (e.g., gfx1151 Strix Halo)
+# Downloads pre-built tarballs from TheRock S3 bucket (same method as amd-strix-halo-toolboxes)
+# Use with: --build-arg VARIANT=rocm-therock --build-arg THEROCK_TARGET=gfx1151
+FROM ${BASE_IMAGE} AS base-rocm-therock
+
+ARG THEROCK_TARGET=gfx1151
+ARG THEROCK_ROCM_MAJOR=7
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Use Clang for ROCm toolchain instead of GCC
+ENV TF_ROCM_CLANG="1"
+
+# Install dependencies for downloading and extracting TheRock
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates curl aria2 python3 python3-pip && \
+  ln -sf /usr/bin/python3 /usr/bin/python && \
+  apt-get clean -y && rm -rf /var/lib/apt/lists/*
+
+# Download and install ROCm from TheRock nightly tarballs
+# See https://github.com/kyuz0/amd-strix-halo-toolboxes and https://github.com/ROCm/TheRock
+WORKDIR /tmp
+RUN bash -c 'set -euo pipefail; \
+  BASE="https://therock-nightly-tarball.s3.amazonaws.com"; \
+  PREFIX="therock-dist-linux-${THEROCK_TARGET}-${THEROCK_ROCM_MAJOR}"; \
+  KEY="$(curl -s "${BASE}?list-type=2&prefix=${PREFIX}" \
+    | tr "<" "\n" \
+    | grep -o "therock-dist-linux-${THEROCK_TARGET}-${THEROCK_ROCM_MAJOR}\..*\.tar\.gz" \
+    | sort -V | tail -n1)"; \
+  echo "Downloading TheRock tarball: ${KEY}"; \
+  aria2c -x 16 -s 16 -j 16 --file-allocation=none "${BASE}/${KEY}" -o therock.tar.gz && \
+  mkdir -p /opt/rocm && \
+  tar xzf therock.tar.gz -C /opt/rocm --strip-components=1 && \
+  rm -f therock.tar.gz && \
+  # Remove any circular symlinks that cause issues with bazel globbing
+  find /opt/rocm -maxdepth 10 -type l -exec sh -c "readlink -f {} >/dev/null 2>&1 || rm -f {}" \; 2>/dev/null || true && \
+  # Also remove self-referential symlinks like llvm -> . or rocm_dist -> .
+  find /opt/rocm -type l -lname "." -delete 2>/dev/null || true && \
+  find /opt/rocm -type l -lname ".." -delete 2>/dev/null || true && \
+  echo "/opt/rocm/lib" > /etc/ld.so.conf.d/rocm.conf && \
+  echo "/opt/rocm/lib64" >> /etc/ld.so.conf.d/rocm.conf && \
+  echo "/opt/rocm/lib/llvm/lib" >> /etc/ld.so.conf.d/rocm.conf && \
+  ldconfig && \
+  echo "=== ROCm structure ===" && ls -la /opt/rocm/ && \
+  echo "=== Checking for broken symlinks ===" && find /opt/rocm -xtype l 2>/dev/null | head -10 || echo "No broken symlinks"'
+
+WORKDIR /
+
+# TheRock paths compatible with XLA ROCm configuration
+# Note: TheRock has lib/llvm/bin not llvm/bin
+ENV ROCM_PATH="/opt/rocm"
+ENV HIP_PLATFORM="amd"
+ENV HIP_PATH="/opt/rocm"
+ENV HIP_CLANG_PATH="/opt/rocm/lib/llvm/bin"
+ENV HIP_INCLUDE_PATH="/opt/rocm/include"
+ENV HIP_LIB_PATH="/opt/rocm/lib"
+ENV HIP_DEVICE_LIB_PATH="/opt/rocm/lib/llvm/amdgcn/bitcode"
+ENV PATH="/opt/rocm/bin:/opt/rocm/lib/llvm/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/opt/rocm/lib:/opt/rocm/lib64:/opt/rocm/lib/llvm/lib:${LD_LIBRARY_PATH}"
+ENV LIBRARY_PATH="/opt/rocm/lib:/opt/rocm/lib64"
+ENV CPATH="/opt/rocm/include"
+ENV PKG_CONFIG_PATH="/opt/rocm/lib/pkgconfig"
+
+# Create llvm -> lib/llvm symlink for XLA rocm_configure.bzl compatibility
+# XLA hardcodes llvm/bin/clang but TheRock uses lib/llvm/bin/clang
+RUN ln -sf lib/llvm /opt/rocm/llvm
 
 FROM base-${VARIANT}
 
@@ -59,7 +126,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # We need to install "add-apt-repository" first
 RUN apt-get update && \
   # Install basic system dependencies
-  apt-get update && apt-get install -y ca-certificates curl git unzip wget xxd && \
+  apt-get update && apt-get install -y ca-certificates curl git unzip wget xxd make build-essential && \
   # Install Clang
   clang_version="18" && \
   apt-get install -y wget gnupg software-properties-common lsb-release && \
@@ -77,7 +144,7 @@ ENV USE_BAZEL_VERSION=7.7.0
 
 # Install Python and the necessary global dependencies
 RUN apt-get update && apt-get install -y python3 python3-pip && \
-  ln -s /usr/bin/python3 /usr/bin/python && \
+  ln -sf /usr/bin/python3 /usr/bin/python && \
   python -m pip install --upgrade pip numpy && \
   apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
